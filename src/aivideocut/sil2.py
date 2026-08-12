@@ -485,13 +485,19 @@ def run_single_file(
 
         if enhance_before_transcribe:
             # /enhance only accepts audio files (soundfile can't read video
-            # containers), so extract the audio track first.
-            raw_audio_path = current_output_path.with_name("03A_FOR_ENHANCE.wav")
+            # containers), so extract the audio track first. Mono/24kHz/FLAC
+            # instead of the source's raw stereo/48kHz WAV: the server
+            # downmixes to mono anyway before running the model, so sending
+            # stereo is wasted bandwidth, and 24kHz still comfortably covers
+            # speech brightness while cutting the upload ~10x — this matters
+            # a lot over a free ngrok tunnel with a full-length video.
+            raw_audio_path = current_output_path.with_name("03A_FOR_ENHANCE.flac")
 
             if not already_done(raw_audio_path):
                 ffmpeg_extract_audio_cmd = [
                     *get_ffmpeg_cmd(),
                     "-i", current_input_path,
+                    "-ac", "1", "-ar", "24000", "-c:a", "flac",
                     raw_audio_path,
                     "-y",
                 ]
@@ -509,7 +515,7 @@ def run_single_file(
             # steps most likely to need a retry (e.g. the Colab API URL
             # changed), and their inputs are cheap to re-derive once the
             # expensive video-cutting steps above have been reused.
-            enhanced_path = current_output_path.with_name("03B_ENHANCED.wav")
+            enhanced_path = current_output_path.with_name("03B_ENHANCED.flac")
             audio_for_transcription = enhance_via_api(
                 raw_audio_path,
                 enhanced_path,
