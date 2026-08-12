@@ -31,6 +31,8 @@ gemini_models: tuple[GeminiModels, ...] = (
     "gemini-2.0-flash-lite-001",
     # 2.5-flash
     "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-flash-latest",
     # 2.5-pro
     "gemini-2.5-pro",
 )

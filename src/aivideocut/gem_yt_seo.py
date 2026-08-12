@@ -1,63 +1,41 @@
 # pyright: basic
 
-
-from rich import print as rprint
+from functools import partial
 
 from aivideocut.configs import (
     OUTPUT_DIR_PATH,
     SEO_YT_FILE_PATH,
     SUMMARY_FILE_PATH,
 )
+from aivideocut.gem_pipeline import run_gemini_chunked_pipeline
 from aivideocut.gem_prompts import create_youtube_seo_prompt
-from aivideocut.gem_utils import ask_gemini
-from aivideocut.utils import (
-    create_file_path,
-    read_file_path,
-    write_str_to_file,
-)
+from aivideocut.utils import create_file_path, read_file_path
 
 
 def gem_yt_seo() -> None:
-    file = create_file_path(
+    input_path = create_file_path(
         full_filename=SUMMARY_FILE_PATH.name,
         parent=OUTPUT_DIR_PATH,
-        unique_filename=False,
-        today_parent=False,
-        separator="",
     )
-    summary = read_file_path(file)
+    summary = read_file_path(input_path)
 
-    prompt = create_youtube_seo_prompt(
-        summary,
-        ("Vídeo educacional mostrando exemplos de uso avançado de f-string no Python."),
+    output_path = create_file_path(
+        full_filename=SEO_YT_FILE_PATH.name,
+        parent=OUTPUT_DIR_PATH,
     )
 
-    gemini_response = ask_gemini(prompt)
-    gemini_response_text = gemini_response.text
-
-    if not gemini_response_text:
-        print("DEU RUIM")
-        return
-
-    response_text = gemini_response_text.strip()
-
-    rprint("\n\n")
-    rprint(response_text)
-
-    if response_text:
-        file = create_file_path(
-            full_filename=SEO_YT_FILE_PATH.name,
-            parent=OUTPUT_DIR_PATH,
-            unique_filename=False,
-            today_parent=False,
-            separator="",
-        )
-
-        write_str_to_file(response_text, path=file, create_parents=True)
-
-        rprint(f"\n✅ Saved to: {file.name} (model = {gemini_response.model_version})")
-    else:
-        rprint("\n🔴 Gemini did not return the text")
+    run_gemini_chunked_pipeline(
+        chunks=[summary],
+        prompt_fn=partial(
+            create_youtube_seo_prompt,
+            additional_context=(
+                "Vídeo educacional mostrando exemplos de uso avançado de "
+                "f-string no Python."
+            ),
+        ),
+        output_path=output_path,
+        chunk_separator="",
+    )
 
 
 if __name__ == "__main__":

@@ -36,55 +36,36 @@ def ajust_vad_speech_timestamps(
     pad_start_secs: float = 0.02,
     pad_end_secs: float = 0.03,
 ) -> SpeechTimestamps:
-    new_timestamps: SpeechTimestamps = []
-
     if not speech_timestamps:
-        return new_timestamps
+        return []
 
-    first_timestamp_start = speech_timestamps[-0]["start"]
-    last_timestamp_end = speech_timestamps[-1]["end"]
+    padded_timestamps: SpeechTimestamps = [
+        {
+            "start": max(0.0, timestamp["start"] - pad_start_secs),
+            "end": timestamp["end"] + pad_end_secs,
+        }
+        for timestamp in speech_timestamps
+    ]
 
-    last_current_start = -1
-    last_current_end = 0
-    for timestamp in speech_timestamps:
-        current_start, current_end = timestamp.values()
-        found_last_end = False
+    new_timestamps: SpeechTimestamps = []
+    for timestamp in padded_timestamps:
+        previous = new_timestamps[-1] if new_timestamps else None
 
-        if pad_start_secs > 0:
-            current_start = max(last_current_end, current_start - pad_start_secs)
-
-        if pad_end_secs > 0:
-            current_end = min(last_timestamp_end, current_end + pad_end_secs)
-
-        if last_current_start < 0:
-            last_current_start = current_start
-
-        if current_start == last_current_end:
+        # Padding made this segment overlap/touch the previous one: merge them.
+        if previous is not None and timestamp["start"] <= previous["end"]:
+            previous["end"] = max(previous["end"], timestamp["end"])
             continue
 
-        current_duration = current_end - last_current_start
-        is_current_duration_accepted = current_duration >= min_speech_length_secs
-        last_end_not_found = not found_last_end
+        # Previous kept segment is still shorter than the minimum: bridge the
+        # silence gap to it instead of emitting a too-short cut.
+        if (
+            previous is not None
+            and previous["end"] - previous["start"] < min_speech_length_secs
+        ):
+            previous["end"] = timestamp["end"]
+            continue
 
-        if found_last_end and not is_current_duration_accepted:
-            last_current_start = current_start
-
-        if last_end_not_found and is_current_duration_accepted:
-            new_speech_timestamp: SpeechTimestamp = {
-                "start": last_current_start,
-                "end": current_end,
-            }
-            new_timestamps.append(new_speech_timestamp)
-            found_last_end = True
-            last_current_start = -1
-            last_current_end = current_end
-
-    if not new_timestamps:
-        new_timestamps.append(
-            {"start": first_timestamp_start, "end": last_timestamp_end}
-        )
-    else:
-        new_timestamps[-1]["end"] = last_timestamp_end
+        new_timestamps.append(dict(timestamp))
 
     rprint(
         "\n"

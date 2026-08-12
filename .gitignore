@@ -3,6 +3,13 @@ db.json
 transcriptions
 models_comparison
 
+# Test videos and pipeline output (large binaries, not part of the project)
+video_para_teste.mkv
+video_para_teste_mkv/
+*.mkv
+*.mp4
+*.mov
+
 # ⚠️ This is just for personal reasons (testing something)
 # ⚠️ You may remove it
 index.ts

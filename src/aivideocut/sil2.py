@@ -11,6 +11,7 @@ from subprocess import run
 from typing import Literal, ParamSpec, TypeVar
 
 import av
+import static_ffmpeg
 from rich.console import Console
 from silero_vad import get_speech_timestamps, load_silero_vad, read_audio
 from smartcut.__main__ import Progress, parse_time_segments
@@ -23,10 +24,20 @@ from smartcut.cut_video import (
 )
 from smartcut.misc_data import AudioExportInfo, AudioExportSettings
 
+from aivideocut.configs import ORIGINAL_SRT_FILE_PATH
 from aivideocut.utils import SpeechTimestamps, ajust_vad_speech_timestamps
+from aivideocut.whisper_client import enhance_via_api, transcribe_to_srt
 
 console = Console(highlight=False, style="cyan")
 rprint = console.print
+
+# Use a bundled static ffmpeg/ffprobe (auto-downloaded on first run) instead
+# of whatever the system has. This is what makes the pipeline work the same
+# way on any Linux distro, Windows or Mac without the user having to install
+# ffmpeg themselves — and it guarantees libx264 is present, which several
+# distro-packaged ffmpeg builds (Fedora, some Debian derivatives) omit for
+# licensing reasons.
+static_ffmpeg.add_paths(weak=False)
 
 ROOT_DIR = Path(__file__).parent.parent.parent
 FFMPEG_LOG_LEVEL = Literal[
@@ -89,7 +100,7 @@ def ffmpeg_fix_codecs(
     if dry_run:
         return output_file
 
-    run(ffmpeg_cmd)
+    run(ffmpeg_cmd, check=True)
 
     return output_file
 
@@ -135,6 +146,11 @@ def ffmpeg_audio_normalization(
         re.DOTALL | re.MULTILINE,
     )
 
+    if not found_loud_norm_output and ffmpeg_normalization_output.returncode != 0:
+        rprint("🔴 ffmpeg loudnorm analysis failed:", stderr_output, "\n\n")
+        error_message = "ffmpeg loudnorm analysis pass failed, see log above"
+        raise RuntimeError(error_message)
+
     if found_loud_norm_output:
         raw_loud_norm_json = found_loud_norm_output.group(1)
         parsed_loud_norm = json.loads(raw_loud_norm_json)
@@ -173,7 +189,7 @@ def ffmpeg_audio_normalization(
         if dry_run:
             return output_file
 
-        run(ffmpeg_audio_normalization)
+        run(ffmpeg_audio_normalization, check=True)
 
         return output_file
     return output_file
@@ -183,10 +199,8 @@ def auto_editor_cut_silences(
     *, input_file: Path, output_file: Path, dry_run: bool = False
 ) -> Path:
     # fmt: off
-    auto_editor_bin = ROOT_DIR / ".." /  "autoeditorlatest"/".venv"/"bin"/"auto-editor"
     auto_editor_silence_cut  = [
-        # "/Users/luizotavio/Desktop/tutoriais_e_cursos/autoeditorlatest/.venv/bin/auto-editor",
-        str(auto_editor_bin),
+        "auto-editor",
         # "--edit", "audio:threshold=0.02,stream=all,mincut=30", # OLD
         "--edit", "audio:threshold=0.04,stream=all,mincut=30",
         "--margin", "0.2s,0.3s",
@@ -210,7 +224,7 @@ def auto_editor_cut_silences(
     if dry_run:
         return output_file
 
-    run(auto_editor_silence_cut)
+    run(auto_editor_silence_cut, check=True)
     rprint(join(auto_editor_silence_cut), "\n\n")
 
     return output_file
@@ -232,7 +246,7 @@ def silero_get_speech_pauses(
         return [], output_file
 
     rprint(join(ffmpeg_input_to_wav), "\n\n")
-    run(ffmpeg_input_to_wav)
+    run(ffmpeg_input_to_wav, check=True)
 
     silero_model = load_silero_vad()
     audio_data = read_audio(str(output_file))
@@ -382,6 +396,9 @@ def run_single_file(
     cut_audio_silences: bool = True,
     cut_speech_silences: bool = True,
     fix_codecs: bool = True,
+    transcribe_audio: bool = True,
+    enhance_before_transcribe: bool = False,
+    force: bool = False,
 ) -> list[Path]:
     files_processed = []
     in_path = input_path.resolve()
@@ -399,14 +416,21 @@ def run_single_file(
     current_input_path = in_path
     current_output_path = output_dir / source_filename
 
+    def already_done(path: Path) -> bool:
+        if force or dry_run or not path.exists():
+            return False
+        rprint(f"⏭️  Etapa já feita, reaproveitando: {path.name}\n\n")
+        return True
+
     if fix_codecs:
         current_output_path = current_output_path.with_stem("00_FIX_CODECS")
 
-        ffmpeg_fix_codecs(
-            input_file=current_input_path,
-            output_file=current_output_path,
-            dry_run=dry_run,
-        )
+        if not already_done(current_output_path):
+            ffmpeg_fix_codecs(
+                input_file=current_input_path,
+                output_file=current_output_path,
+                dry_run=dry_run,
+            )
 
         files_processed.append(current_output_path)
         current_input_path = current_output_path
@@ -414,11 +438,12 @@ def run_single_file(
     if normalize_audio:
         current_output_path = current_output_path.with_stem("01_NORMALIZED")
 
-        ffmpeg_audio_normalization(
-            input_file=current_input_path,
-            output_file=current_output_path,
-            dry_run=dry_run,
-        )
+        if not already_done(current_output_path):
+            ffmpeg_audio_normalization(
+                input_file=current_input_path,
+                output_file=current_output_path,
+                dry_run=dry_run,
+            )
 
         files_processed.append(current_output_path)
         current_input_path = current_output_path
@@ -426,11 +451,12 @@ def run_single_file(
     if cut_audio_silences:
         current_output_path = current_output_path.with_stem("02_AE_CUT")
 
-        auto_editor_cut_silences(
-            input_file=current_input_path,
-            output_file=current_output_path,
-            dry_run=dry_run,
-        )
+        if not already_done(current_output_path):
+            auto_editor_cut_silences(
+                input_file=current_input_path,
+                output_file=current_output_path,
+                dry_run=dry_run,
+            )
 
         files_processed.append(current_output_path)
         current_input_path = current_output_path
@@ -438,20 +464,64 @@ def run_single_file(
     if cut_speech_silences:
         current_output_path = current_output_path.with_stem("04_FINAL")
 
-        speech_timestamps, _ = silero_get_speech_pauses(
-            input_file=current_input_path,
-            output_file=current_input_path.with_name("03_SILERO.wav"),
-            dry_run=dry_run,
-        )
-        smartcut_cut_by_second_timestamps(
-            input_path=current_input_path,
-            output_path=current_output_path,
-            speech_timestamps=speech_timestamps,
-            dry_run=dry_run,
-        )
+        if not already_done(current_output_path):
+            speech_timestamps, _ = silero_get_speech_pauses(
+                input_file=current_input_path,
+                output_file=current_input_path.with_name("03_SILERO.wav"),
+                dry_run=dry_run,
+            )
+            smartcut_cut_by_second_timestamps(
+                input_path=current_input_path,
+                output_path=current_output_path,
+                speech_timestamps=speech_timestamps,
+                dry_run=dry_run,
+            )
 
         files_processed.append(current_output_path)
         current_input_path = current_output_path
+
+    if transcribe_audio:
+        audio_for_transcription = current_input_path
+
+        if enhance_before_transcribe:
+            # /enhance only accepts audio files (soundfile can't read video
+            # containers), so extract the audio track first.
+            raw_audio_path = current_output_path.with_name("03A_FOR_ENHANCE.wav")
+
+            if not already_done(raw_audio_path):
+                ffmpeg_extract_audio_cmd = [
+                    *get_ffmpeg_cmd(),
+                    "-i", current_input_path,
+                    raw_audio_path,
+                    "-y",
+                ]
+                rprint(
+                    "🎧 ffmpeg extract audio for enhance:",
+                    f"[code]{join(ffmpeg_extract_audio_cmd)}[/code]",
+                    "\n\n",
+                )
+
+                if not dry_run:
+                    run(ffmpeg_extract_audio_cmd, check=True)
+            files_processed.append(raw_audio_path)
+
+            # Always re-run enhance/transcribe themselves — these are the
+            # steps most likely to need a retry (e.g. the Colab API URL
+            # changed), and their inputs are cheap to re-derive once the
+            # expensive video-cutting steps above have been reused.
+            enhanced_path = current_output_path.with_name("03B_ENHANCED.wav")
+            audio_for_transcription = enhance_via_api(
+                raw_audio_path,
+                enhanced_path,
+                dry_run=dry_run,
+            )
+            files_processed.append(audio_for_transcription)
+
+        transcribe_to_srt(
+            audio_for_transcription,
+            ORIGINAL_SRT_FILE_PATH,
+            dry_run=dry_run,
+        )
 
     return files_processed
 
@@ -465,6 +535,9 @@ def run_many_files(
     cut_audio_silences: bool = True,
     cut_speech_silences: bool = True,
     fix_codecs: bool = True,
+    transcribe_audio: bool = True,
+    enhance_before_transcribe: bool = False,
+    force: bool = False,
 ) -> None:
     in_path = input_path.resolve()
     allowed_extensions = [".mp4", ".mov", ".mkv"]
@@ -492,6 +565,9 @@ def run_many_files(
             normalize_audio=normalize_audio,
             cut_audio_silences=cut_audio_silences,
             cut_speech_silences=cut_speech_silences,
+            transcribe_audio=transcribe_audio,
+            enhance_before_transcribe=enhance_before_transcribe,
+            force=force,
             dry_run=dry_run,
         )
 
@@ -504,6 +580,7 @@ if __name__ == "__main__":
         normalize_audio=True,
         cut_audio_silences=True,
         cut_speech_silences=True,
+        transcribe_audio=True,
         dry_run=False,
     )
 

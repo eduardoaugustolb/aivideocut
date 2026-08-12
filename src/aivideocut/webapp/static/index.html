@@ -1,0 +1,996 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>aivideocut</title>
+<style>
+  :root {
+    --bg: #f5f5f7;
+    --card-bg: #ffffff;
+    --text: #1d1d1f;
+    --text-secondary: #6e6e73;
+    --accent: #0071e3;
+    --accent-hover: #0077ed;
+    --border: rgba(0, 0, 0, 0.08);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
+    --radius: 16px;
+    --success: #248a3d;
+    --success-bg: #e6f7ea;
+    --danger: #d70015;
+    --danger-bg: #fde9e7;
+    --warning: #b25000;
+    --warning-bg: #fff2e0;
+    --pill-bg: #e8e8ed;
+    --log-bg: #1d1d1f;
+    --log-text: #d6d6d8;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #000000;
+      --card-bg: #1c1c1e;
+      --text: #f5f5f7;
+      --text-secondary: #98989d;
+      --border: rgba(255, 255, 255, 0.09);
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+      --success: #32d74b;
+      --success-bg: rgba(50, 215, 75, 0.14);
+      --danger: #ff453a;
+      --danger-bg: rgba(255, 69, 58, 0.14);
+      --warning: #ff9f0a;
+      --warning-bg: rgba(255, 159, 10, 0.14);
+      --pill-bg: #2c2c2e;
+      --log-bg: #000000;
+      --log-text: #c7c7cc;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
+      "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    background: color-mix(in srgb, var(--bg) 72%, transparent);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .header-inner {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .brand-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  nav.segmented {
+    display: flex;
+    background: var(--pill-bg);
+    border-radius: 10px;
+    padding: 3px;
+    gap: 2px;
+  }
+
+  nav.segmented button {
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 6px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+    font-family: inherit;
+  }
+
+  nav.segmented button.active {
+    background: var(--card-bg);
+    color: var(--text);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  }
+
+  main {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 32px 24px 80px;
+  }
+
+  .page { display: none; }
+  .page.active { display: block; animation: fade-in 0.18s ease; }
+
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  h1 {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 0 0 6px;
+  }
+
+  .subtitle {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin: 0 0 28px;
+  }
+
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 22px 24px;
+    margin-bottom: 18px;
+  }
+
+  .card h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+
+  .card .hint {
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    margin: 0 0 16px;
+    line-height: 1.5;
+  }
+
+  .field {
+    margin-bottom: 14px;
+  }
+
+  .field label {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+  }
+
+  .path-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  input[type="text"],
+  input[type="password"] {
+    width: 100%;
+    font-family: inherit;
+    font-size: 14px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  input[type="text"]:focus,
+  input[type="password"]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+
+  button {
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .btn {
+    border: none;
+    border-radius: 980px;
+    padding: 9px 20px;
+    font-size: 13.5px;
+    font-weight: 600;
+    transition: transform 0.06s ease, background 0.15s ease, opacity 0.15s ease;
+  }
+
+  .btn:active { transform: scale(0.97); }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:disabled {
+    background: var(--pill-bg);
+    color: var(--text-secondary);
+    cursor: not-allowed;
+  }
+
+  .btn-secondary {
+    background: var(--pill-bg);
+    color: var(--text);
+  }
+  .btn-secondary:hover { filter: brightness(0.96); }
+
+  .btn-small { padding: 6px 14px; font-size: 12.5px; }
+
+  .switch-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .switch-row:last-child { border-bottom: none; }
+
+  .switch-label { font-size: 14px; }
+  .switch-desc { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+
+  .switch {
+    position: relative;
+    width: 44px;
+    height: 26px;
+    flex-shrink: 0;
+  }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .track {
+    position: absolute;
+    inset: 0;
+    background: var(--pill-bg);
+    border-radius: 999px;
+    transition: background 0.2s ease;
+    cursor: pointer;
+  }
+  .switch .track::before {
+    content: "";
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    left: 2px;
+    top: 2px;
+    background: #fff;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    transition: transform 0.2s ease;
+  }
+  .switch input:checked + .track { background: var(--success); }
+  .switch input:checked + .track::before { transform: translateX(18px); }
+
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 999px;
+  }
+  .status-pill.idle { background: var(--pill-bg); color: var(--text-secondary); }
+  .status-pill.running { background: var(--warning-bg); color: var(--warning); }
+  .status-pill.done { background: var(--success-bg); color: var(--success); }
+  .status-pill.error { background: var(--danger-bg); color: var(--danger); }
+
+  .status-pill .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .status-pill.running .dot { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+
+  .log-panel {
+    background: var(--log-bg);
+    color: var(--log-text);
+    border-radius: 12px;
+    padding: 14px 16px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    max-height: 280px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin-top: 16px;
+  }
+  .log-panel:empty::before {
+    content: "Aguardando início…";
+    color: #6e6e73;
+  }
+
+  .gen-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  @media (max-width: 620px) { .gen-grid { grid-template-columns: 1fr; } }
+
+  .gen-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .gen-card .title { font-size: 14px; font-weight: 600; }
+  .gen-card .desc { font-size: 12px; color: var(--text-secondary); line-height: 1.4; }
+  .gen-card .actions { display: flex; align-items: center; justify-content: space-between; margin-top: auto; }
+
+  .file-list { display: flex; flex-direction: column; gap: 2px; }
+  .file-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 4px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .file-row:last-child { border-bottom: none; }
+  .file-row:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); border-radius: 8px; }
+  .file-name { font-size: 14px; font-weight: 500; }
+  .file-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+  .file-actions { display: flex; gap: 8px; }
+
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-secondary);
+    font-size: 13.5px;
+  }
+
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: var(--card-bg);
+    border-radius: 18px;
+    max-width: 640px;
+    width: 100%;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  }
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-header h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  .modal-close {
+    border: none;
+    background: var(--pill-bg);
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    color: var(--text-secondary);
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    font-size: 13.5px;
+    line-height: 1.65;
+  }
+  .modal-body pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    margin: 0;
+  }
+  .modal-body h1, .modal-body h2, .modal-body h3 { margin: 18px 0 8px; }
+  .modal-body h1:first-child, .modal-body h2:first-child, .modal-body h3:first-child { margin-top: 0; }
+  .modal-body p { margin: 0 0 10px; }
+  .modal-body ul { margin: 0 0 10px; padding-left: 20px; }
+
+  .toast-stack {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 200;
+  }
+  .toast {
+    background: var(--text);
+    color: var(--bg);
+    padding: 10px 18px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    animation: toast-in 0.2s ease;
+  }
+  .toast.error { background: var(--danger); color: #fff; }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .save-row { display: flex; justify-content: flex-end; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="brand"><span class="brand-dot"></span>aivideocut</div>
+    <nav class="segmented" id="tabs">
+      <button data-page="pipeline" class="active">Pipeline</button>
+      <button data-page="content">Conteúdo</button>
+      <button data-page="files">Arquivos</button>
+      <button data-page="settings">Config</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+  <!-- PIPELINE -->
+  <section class="page active" id="page-pipeline">
+    <h1>Cortar &amp; transcrever</h1>
+    <p class="subtitle">Roda ffmpeg, auto-editor, Silero VAD e a transcrição via API do Colab.</p>
+
+    <div class="card">
+      <h2>Vídeo de origem</h2>
+      <div class="field">
+        <div class="path-row">
+          <input type="text" id="video-path" placeholder="/caminho/do/seu/video.mkv" />
+          <button class="btn btn-secondary" id="browse-btn">Procurar…</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Etapas</h2>
+      <div class="switch-row">
+        <div><div class="switch-label">Corrigir codecs</div></div>
+        <label class="switch"><input type="checkbox" id="opt-fix_codecs" checked /><span class="track"></span></label>
+      </div>
+      <div class="switch-row">
+        <div><div class="switch-label">Normalizar áudio</div></div>
+        <label class="switch"><input type="checkbox" id="opt-normalize_audio" checked /><span class="track"></span></label>
+      </div>
+      <div class="switch-row">
+        <div><div class="switch-label">Cortar silêncio (auto-editor)</div></div>
+        <label class="switch"><input type="checkbox" id="opt-cut_audio_silences" checked /><span class="track"></span></label>
+      </div>
+      <div class="switch-row">
+        <div><div class="switch-label">Corte fino de fala (Silero VAD)</div></div>
+        <label class="switch"><input type="checkbox" id="opt-cut_speech_silences" checked /><span class="track"></span></label>
+      </div>
+      <div class="switch-row">
+        <div>
+          <div class="switch-label">Transcrever</div>
+          <div class="switch-desc">Envia pra API do Colab (/transcribe)</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="opt-transcribe_audio" checked /><span class="track"></span></label>
+      </div>
+      <div class="switch-row">
+        <div>
+          <div class="switch-label">Melhorar áudio antes de transcrever</div>
+          <div class="switch-desc">Usa a API do Colab (/enhance) só pra melhorar a transcrição — não altera o vídeo final</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="opt-enhance_before_transcribe" /><span class="track"></span></label>
+      </div>
+      <div class="switch-row">
+        <div>
+          <div class="switch-label">Reaproveitar etapas já feitas</div>
+          <div class="switch-desc">Se um arquivo de uma etapa já existe (de uma tentativa anterior), pula e reusa em vez de refazer. Desligue pra forçar tudo de novo do zero.</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="opt-resume" checked /><span class="track"></span></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <h2 style="margin:0;">Execução</h2>
+        <span class="status-pill idle" id="pipeline-status"><span class="dot"></span>Ocioso</span>
+      </div>
+      <div class="save-row" style="justify-content:flex-start; margin-top:16px;">
+        <button class="btn btn-primary" id="start-pipeline-btn">Iniciar pipeline</button>
+      </div>
+      <div class="log-panel" id="pipeline-log"></div>
+      <div id="pipeline-results"></div>
+    </div>
+  </section>
+
+  <!-- CONTENT -->
+  <section class="page" id="page-content">
+    <h1>Conteúdo com IA</h1>
+    <p class="subtitle">Gera a partir da transcrição, usando NVIDIA como principal e Gemini como fallback.</p>
+
+    <div class="card">
+      <div class="gen-grid" id="gen-grid"></div>
+      <div class="log-panel" id="content-log"></div>
+    </div>
+  </section>
+
+  <!-- FILES -->
+  <section class="page" id="page-files">
+    <h1>Arquivos gerados</h1>
+    <p class="subtitle">Tudo o que a pipeline e a IA produziram em <code>transcriptions/</code>.</p>
+
+    <div class="card">
+      <div class="row" style="margin-bottom: 12px;">
+        <h2 style="margin:0;">Arquivos</h2>
+        <button class="btn btn-secondary btn-small" id="refresh-files-btn">Atualizar</button>
+      </div>
+      <div class="file-list" id="file-list"></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="page" id="page-settings">
+    <h1>Configurações</h1>
+    <p class="subtitle">Chaves de API. A URL do Colab muda toda vez que a sessão reinicia — atualize aqui quando isso acontecer.</p>
+
+    <div class="card">
+      <h2>Speech API (Colab)</h2>
+      <p class="hint">URL do ngrok e token gerados no notebook <code>SpeechAPI.ipynb</code>.</p>
+      <div class="field">
+        <label for="set-whisper-url">URL da API (ngrok)</label>
+        <input type="text" id="set-whisper-url" placeholder="https://xxxx.ngrok-free.app" />
+      </div>
+      <div class="field">
+        <label for="set-whisper-token">Token da API</label>
+        <input type="password" id="set-whisper-token" placeholder="••••••••" />
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Geração de texto</h2>
+      <p class="hint">Usadas pelos scripts de conteúdo (NVIDIA é a principal, Gemini é o fallback).</p>
+      <div class="field">
+        <label for="set-nvidia-key">NVIDIA API key</label>
+        <input type="password" id="set-nvidia-key" placeholder="••••••••" />
+      </div>
+      <div class="field">
+        <label for="set-gemini-key">Gemini API key</label>
+        <input type="password" id="set-gemini-key" placeholder="••••••••" />
+      </div>
+      <div class="save-row">
+        <button class="btn btn-primary" id="save-settings-btn">Salvar</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Arquivo</h3>
+      <button class="modal-close" id="modal-close">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<div class="toast-stack" id="toast-stack"></div>
+
+<script>
+const API = "";
+
+const GEN_STEPS = [
+  { id: "fix_srt", title: "Corrigir SRT", desc: "Corrige erros de transcrição técnica" },
+  { id: "translate_en", title: "Traduzir p/ inglês", desc: "SRT completo em EN-US" },
+  { id: "summary", title: "Resumo", desc: "Resumo técnico detalhado" },
+  { id: "article", title: "Artigo", desc: "Artigo técnico em Markdown" },
+  { id: "chapters", title: "Capítulos YouTube", desc: "Timestamps com títulos" },
+  { id: "seo", title: "SEO YouTube", desc: "Título, descrição, tags" },
+];
+
+function toast(message, isError) {
+  const stack = document.getElementById("toast-stack");
+  const el = document.createElement("div");
+  el.className = "toast" + (isError ? " error" : "");
+  el.textContent = message;
+  stack.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+async function api(path, options) {
+  const res = await fetch(API + path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `Erro ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------- Tabs ----------
+document.getElementById("tabs").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-page]");
+  if (!btn) return;
+  document.querySelectorAll("nav.segmented button").forEach((b) => b.classList.remove("active"));
+  document.querySelectorAll(".page").forEach((p) => p.classList.remove("active"));
+  btn.classList.add("active");
+  document.getElementById("page-" + btn.dataset.page).classList.add("active");
+  if (btn.dataset.page === "files") loadFiles();
+});
+
+// ---------- Settings ----------
+async function loadSettings() {
+  try {
+    const settings = await api("/api/settings");
+    document.getElementById("set-whisper-url").value = settings.WHISPER_API_URL || "";
+    document.getElementById("set-whisper-token").placeholder = settings.WHISPER_API_TOKEN_set
+      ? "•••••••• (já definido — digite pra trocar)"
+      : "••••••••";
+    document.getElementById("set-nvidia-key").placeholder = settings.NVIDIA_API_KEY_set
+      ? "•••••••• (já definido — digite pra trocar)"
+      : "••••••••";
+    document.getElementById("set-gemini-key").placeholder = settings.GEMINI_API_KEY_set
+      ? "•••••••• (já definido — digite pra trocar)"
+      : "••••••••";
+  } catch (err) {
+    toast("Não consegui carregar configurações", true);
+  }
+}
+
+document.getElementById("save-settings-btn").addEventListener("click", async () => {
+  const values = {};
+  const url = document.getElementById("set-whisper-url").value.trim();
+  const whisperToken = document.getElementById("set-whisper-token").value.trim();
+  const nvidiaKey = document.getElementById("set-nvidia-key").value.trim();
+  const geminiKey = document.getElementById("set-gemini-key").value.trim();
+
+  if (url) values.WHISPER_API_URL = url;
+  if (whisperToken) values.WHISPER_API_TOKEN = whisperToken;
+  if (nvidiaKey) values.NVIDIA_API_KEY = nvidiaKey;
+  if (geminiKey) values.GEMINI_API_KEY = geminiKey;
+
+  try {
+    await api("/api/settings", { method: "POST", body: JSON.stringify({ values }) });
+    toast("Configurações salvas");
+    document.getElementById("set-whisper-token").value = "";
+    document.getElementById("set-nvidia-key").value = "";
+    document.getElementById("set-gemini-key").value = "";
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+// ---------- Browse ----------
+document.getElementById("browse-btn").addEventListener("click", async () => {
+  try {
+    const res = await api("/api/browse", { method: "POST" });
+    if (res.path) document.getElementById("video-path").value = res.path;
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+// ---------- Run streaming helper ----------
+function setStatus(el, state, label) {
+  el.className = "status-pill " + state;
+  el.innerHTML = '<span class="dot"></span>' + label;
+}
+
+function streamRun(runId, logEl, onDone) {
+  // The run itself lives entirely server-side (a background thread) and
+  // keeps going no matter what the WebSocket does — so a dropped connection
+  // (wifi blip, laptop sleep) just means we reconnect and replay the log
+  // from the start, instead of treating it as the run having failed.
+  let settled = false;
+  let attempt = 0;
+
+  function connect() {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const ws = new WebSocket(`${proto}//${location.host}/api/runs/${runId}/ws`);
+
+    ws.onopen = () => {
+      if (attempt > 0) toast("Conexão recuperada");
+      attempt = 0;
+    };
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === "log") {
+        // ffmpeg/auto-editor rewrite progress lines with \r; that only
+        // makes sense in a real terminal, so turn updates into new lines.
+        logEl.textContent = msg.text.replace(/\r\n?/g, "\n");
+        logEl.scrollTop = logEl.scrollHeight;
+      } else if (msg.type === "done") {
+        settled = true;
+        onDone(msg);
+      } else if (msg.type === "error") {
+        settled = true;
+        onDone({ status: "error", error: msg.message });
+      }
+    };
+
+    ws.onclose = () => {
+      if (settled) return;
+      attempt += 1;
+      if (attempt === 1) toast("Conexão perdida, tentando reconectar…");
+      if (attempt > 40) {
+        settled = true;
+        onDone({ status: "error", error: "Não consegui reconectar ao servidor" });
+        return;
+      }
+      setTimeout(connect, Math.min(1000 * attempt, 5000));
+    };
+  }
+
+  connect();
+}
+
+async function runAndStream(startPath, startBody, logEl, statusEl, onDone) {
+  logEl.textContent = "";
+  setStatus(statusEl, "running", "Rodando…");
+  try {
+    const { run_id } = await api(startPath, {
+      method: "POST",
+      body: startBody ? JSON.stringify(startBody) : undefined,
+    });
+    streamRun(run_id, logEl, (result) => {
+      if (result.status === "done") {
+        setStatus(statusEl, "done", "Concluído");
+      } else {
+        setStatus(statusEl, "error", "Erro");
+        toast(result.error || "Falhou", true);
+      }
+      if (onDone) onDone(result);
+    });
+  } catch (err) {
+    setStatus(statusEl, "error", "Erro");
+    toast(err.message, true);
+  }
+}
+
+// ---------- Pipeline ----------
+document.getElementById("start-pipeline-btn").addEventListener("click", () => {
+  const inputPath = document.getElementById("video-path").value.trim();
+  if (!inputPath) {
+    toast("Escolha um vídeo primeiro", true);
+    return;
+  }
+
+  const body = {
+    input_path: inputPath,
+    fix_codecs: document.getElementById("opt-fix_codecs").checked,
+    normalize_audio: document.getElementById("opt-normalize_audio").checked,
+    cut_audio_silences: document.getElementById("opt-cut_audio_silences").checked,
+    cut_speech_silences: document.getElementById("opt-cut_speech_silences").checked,
+    transcribe_audio: document.getElementById("opt-transcribe_audio").checked,
+    enhance_before_transcribe: document.getElementById("opt-enhance_before_transcribe").checked,
+    force: !document.getElementById("opt-resume").checked,
+  };
+
+  const resultsEl = document.getElementById("pipeline-results");
+  resultsEl.innerHTML = "";
+
+  runAndStream(
+    "/api/pipeline/start",
+    body,
+    document.getElementById("pipeline-log"),
+    document.getElementById("pipeline-status"),
+    (result) => {
+      if (result.status === "done" && Array.isArray(result.result)) {
+        resultsEl.innerHTML =
+          '<div class="field" style="margin-top:16px;"><label>Arquivos gerados</label></div>' +
+          result.result
+            .map(
+              (path) =>
+                `<div class="file-row"><div><div class="file-name">${path.split("/").pop()}</div><div class="file-meta">${path}</div></div>
+                 <button class="btn btn-secondary btn-small" onclick='openPath(${JSON.stringify(path)})'>Abrir</button></div>`
+            )
+            .join("");
+      }
+    }
+  );
+});
+
+async function openPath(path) {
+  try {
+    await api("/api/open", { method: "POST", body: JSON.stringify({ path }) });
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+// ---------- Content generation ----------
+function buildGenGrid() {
+  const grid = document.getElementById("gen-grid");
+  grid.innerHTML = GEN_STEPS.map(
+    (step) => `
+    <div class="gen-card" id="gen-${step.id}">
+      <div class="title">${step.title}</div>
+      <div class="desc">${step.desc}</div>
+      <div class="actions">
+        <span class="status-pill idle" data-status><span class="dot"></span>Pronto</span>
+        <button class="btn btn-secondary btn-small" data-run>Gerar</button>
+      </div>
+    </div>`
+  ).join("");
+
+  grid.querySelectorAll("[data-run]").forEach((btn, idx) => {
+    btn.addEventListener("click", () => {
+      const step = GEN_STEPS[idx];
+      const card = document.getElementById("gen-" + step.id);
+      const statusEl = card.querySelector("[data-status]");
+      runAndStream(
+        `/api/generate/${step.id}`,
+        null,
+        document.getElementById("content-log"),
+        statusEl,
+        () => loadFiles()
+      );
+    });
+  });
+}
+
+// ---------- Files ----------
+function formatBytes(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+  return (n / 1024 / 1024).toFixed(1) + " MB";
+}
+
+function renderMarkdownLite(text) {
+  const escape = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const lines = escape(text).split("\n");
+  let html = "";
+  let inList = false;
+
+  for (const line of lines) {
+    const h3 = line.match(/^###\s+(.*)/);
+    const h2 = line.match(/^##\s+(.*)/);
+    const h1 = line.match(/^#\s+(.*)/);
+    const li = line.match(/^[-*]\s+(.*)/);
+
+    const inline = (s) =>
+      s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`(.+?)`/g, "<code>$1</code>");
+
+    if (li) {
+      if (!inList) { html += "<ul>"; inList = true; }
+      html += `<li>${inline(li[1])}</li>`;
+      continue;
+    }
+    if (inList) { html += "</ul>"; inList = false; }
+
+    if (h3) html += `<h3>${inline(h3[1])}</h3>`;
+    else if (h2) html += `<h2>${inline(h2[1])}</h2>`;
+    else if (h1) html += `<h1>${inline(h1[1])}</h1>`;
+    else if (line.trim() === "") html += "";
+    else html += `<p>${inline(line)}</p>`;
+  }
+  if (inList) html += "</ul>";
+  return html;
+}
+
+async function loadFiles() {
+  const listEl = document.getElementById("file-list");
+  try {
+    const files = await api("/api/files");
+    if (files.length === 0) {
+      listEl.innerHTML = '<div class="empty-state">Nada gerado ainda. Rode a pipeline ou a geração de conteúdo primeiro.</div>';
+      return;
+    }
+    listEl.innerHTML = files
+      .map(
+        (f) => `
+      <div class="file-row" onclick='previewFile(${JSON.stringify(f.name)})'>
+        <div>
+          <div class="file-name">${f.name}</div>
+          <div class="file-meta">${formatBytes(f.size)} · ${new Date(f.modified * 1000).toLocaleString("pt-BR")}</div>
+        </div>
+        <div class="file-actions">
+          <a class="btn btn-secondary btn-small" href="/api/files/${encodeURIComponent(f.name)}" download onclick="event.stopPropagation()">Baixar</a>
+        </div>
+      </div>`
+      )
+      .join("");
+  } catch (err) {
+    toast("Não consegui listar os arquivos", true);
+  }
+}
+
+async function previewFile(name) {
+  const res = await fetch(`/api/files/${encodeURIComponent(name)}`);
+  const text = await res.text();
+  document.getElementById("modal-title").textContent = name;
+  const body = document.getElementById("modal-body");
+  if (name.endsWith(".md")) {
+    body.innerHTML = renderMarkdownLite(text);
+  } else {
+    body.innerHTML = "";
+    const pre = document.createElement("pre");
+    pre.textContent = text;
+    body.appendChild(pre);
+  }
+  document.getElementById("modal-overlay").classList.add("active");
+}
+
+document.getElementById("modal-close").addEventListener("click", () => {
+  document.getElementById("modal-overlay").classList.remove("active");
+});
+document.getElementById("modal-overlay").addEventListener("click", (e) => {
+  if (e.target.id === "modal-overlay") e.currentTarget.classList.remove("active");
+});
+
+document.getElementById("refresh-files-btn").addEventListener("click", loadFiles);
+
+// ---------- Init ----------
+async function reconnectToActiveRun() {
+  try {
+    const current = await api("/api/runs/current");
+    if (!current.run_id) return;
+
+    toast(
+      current.status === "running"
+        ? "Reconectando a uma execução em andamento…"
+        : "Recuperando o log da última execução"
+    );
+
+    const statusEl = document.getElementById("pipeline-status");
+    if (current.status === "running") setStatus(statusEl, "running", "Rodando…");
+
+    streamRun(current.run_id, document.getElementById("pipeline-log"), (result) => {
+      if (result.status === "done") setStatus(statusEl, "done", "Concluído");
+      else setStatus(statusEl, "error", "Erro");
+      loadFiles();
+    });
+  } catch (err) {
+    // no active run, or server not reachable yet — nothing to recover
+  }
+}
+
+buildGenGrid();
+loadSettings();
+reconnectToActiveRun();
+</script>
+</body>
+</html>

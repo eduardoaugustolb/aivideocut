@@ -94,6 +94,20 @@ GeminiModels: TypeAlias = Literal[
     #   desejada e você precisar de um "boost" no modelo Flash, e estiver disposto
     #   a pagar um pouco mais.
     "gemini-2.5-flash",
+    # 2.5-flash-lite
+    # * Descrição: Versão mais leve e barata do Gemini 2.5 Flash. Sucessora do
+    #   antigo 1.5-flash-8b/2.0-flash-lite (ambos descontinuados).
+    # * Custo: O mais barato da família 2.5, dentro do free tier do AI Studio.
+    # * Velocidade: Muito rápido.
+    # * Casos de Uso: Fallback barato para tarefas de texto simples (correção
+    #   de SRT, resumo) quando custo é prioridade sobre raciocínio complexo.
+    "gemini-2.5-flash-lite",
+    # flash-latest
+    # * Descrição: Alias apontando para o Flash mais recente recomendado pela
+    #   Google. Confirmado como o único que funcionou em contas Gemini novas
+    #   em 2026-08 — os nomes fixos (2.5-flash, 2.5-flash-lite, 2.5-pro)
+    #   retornam 404 "no longer available to new users" nelas.
+    "gemini-flash-latest",
     # 2.5-pro
     # * Descrição: Uma iteração mais recente e aprimorada do Gemini Pro. Representa
     #   o cutting edge em raciocínio, complexidade e multimodalidade.
@@ -106,7 +120,7 @@ GeminiModels: TypeAlias = Literal[
     "gemini-2.5-pro",
 ]
 
-DEFAULT_GEMINI_MODEL: GeminiModels = "gemini-1.5-flash-latest"
+DEFAULT_GEMINI_MODEL: GeminiModels = "gemini-flash-latest"
 PROMPT_MAX_CHARS = 6000
 
 OUTPUT_DIR_NAME = "transcriptions"
