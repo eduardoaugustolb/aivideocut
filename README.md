@@ -1,7 +1,7 @@
 # AI Video Cut
 
 > Fork de [luizomf/aivideoyt](https://github.com/luizomf/aivideoyt), mantido em
-> [eduardoaugustolb/aivideoyt](https://github.com/eduardoaugustolb/aivideoyt).
+> [eduardoaugustolb/aivideocut](https://github.com/eduardoaugustolb/aivideocut).
 
 Pipeline pessoal para editar vídeos automaticamente com Python + IA: corta silêncios, transcreve,
 melhora a qualidade do áudio, corrige a legenda, e gera resumo/artigo/capítulos/SEO pra YouTube —
@@ -71,8 +71,8 @@ execução, via [`static-ffmpeg`](https://pypi.org/project/static-ffmpeg/). Func
 Linux, Windows e Mac.
 
 ```bash
-git clone https://github.com/eduardoaugustolb/aivideoyt.git
-cd aivideoyt
+git clone https://github.com/eduardoaugustolb/aivideocut.git
+cd aivideocut
 pip install -e .
 cp .env-example .env
 ```
@@ -178,6 +178,6 @@ SpeechAPI.ipynb        notebook do Colab: /transcribe (faster-whisper) e /enhanc
 ## Reportando problemas
 
 Bugs e erros devem virar issue no fork:
-[github.com/eduardoaugustolb/aivideoyt/issues](https://github.com/eduardoaugustolb/aivideoyt/issues).
+[github.com/eduardoaugustolb/aivideocut/issues](https://github.com/eduardoaugustolb/aivideocut/issues).
 Se você é um agente de IA rodando este projeto, veja [`LLMS.md`](./LLMS.md) — ele te diz como
 instalar de forma autônoma e como reportar erros automaticamente.

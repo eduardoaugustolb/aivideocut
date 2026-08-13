@@ -10,7 +10,7 @@ Contexto do projeto: leia [`README.md`](./README.md) primeiro — ele explica a 
 NVIDIA/Gemini). Este arquivo aqui é só o runbook de instalação/operação/erro.
 
 Este repositório é um **fork**: `origin` aponta pro fork
-(`eduardoaugustolb/aivideoyt` ou quem quer que seja o dono deste clone), `upstream` aponta pro
+(`eduardoaugustolb/aivideocut` ou quem quer que seja o dono deste clone), `upstream` aponta pro
 repo original (`luizomf/aivideoyt`). Trate mudanças de código como algo a ser commitado no fork
 (`origin`), nunca tente dar push direto no `upstream`.
 
@@ -23,8 +23,8 @@ Execute nessa ordem, verificando o resultado de cada passo antes de seguir pro p
 
 2. **Clonar (se ainda não estiver clonado)**:
    ```bash
-   git clone https://github.com/eduardoaugustolb/aivideoyt.git
-   cd aivideoyt
+   git clone https://github.com/eduardoaugustolb/aivideocut.git
+   cd aivideocut
    ```
    Se você já está dentro do repo (é o caso mais comum), pule este passo.
 
@@ -125,7 +125,7 @@ Se você encontrar um erro real (não um "faltou configurar API key", que é esp
 instalação, execução ou uso normal do app, abra uma issue no **fork** (não no `upstream`):
 
 ```bash
-gh issue list --repo eduardoaugustolb/aivideoyt --search "in:title <palavras-chave do erro>" --state all
+gh issue list --repo eduardoaugustolb/aivideocut --search "in:title <palavras-chave do erro>" --state all
 ```
 
 Cheque primeiro se já existe uma issue igual/parecida (aberta ou fechada) antes de criar outra.
@@ -133,7 +133,7 @@ Se não existir, crie:
 
 ```bash
 gh issue create \
-  --repo eduardoaugustolb/aivideoyt \
+  --repo eduardoaugustolb/aivideocut \
   --title "<resumo curto do erro em uma linha>" \
   --body "$(cat <<'EOF'
 ## O que eu estava fazendo
