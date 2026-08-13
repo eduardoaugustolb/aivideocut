@@ -2,12 +2,14 @@
 # ruff: noqa: S603,ERA001
 import json
 import re
+import subprocess
+import threading
 import time
 from collections import namedtuple
 from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
-from subprocess import run
+from subprocess import CalledProcessError, CompletedProcess, Popen
 from typing import Literal, ParamSpec, TypeVar
 
 import av
@@ -38,6 +40,99 @@ rprint = console.print
 # distro-packaged ffmpeg builds (Fedora, some Debian derivatives) omit for
 # licensing reasons.
 static_ffmpeg.add_paths(weak=False)
+
+
+class Cancelled(Exception):
+    """Raised inside a pipeline run when the user cancels it."""
+
+
+class CancelToken:
+    """Lets the webapp cancel a running pipeline from another thread.
+
+    Killing the *thread* running `run_single_file` isn't something Python
+    supports safely, but we don't need to: the thread spends almost all of
+    its time either blocked inside a subprocess (ffmpeg, auto-editor) or a
+    network call. Terminating the subprocess (or, for network calls, just
+    checking the flag at the next step boundary) is enough to stop the run
+    promptly without any unsafe thread manipulation.
+    """
+
+    def __init__(self) -> None:
+        self._event = threading.Event()
+        self._proc: Popen | None = None
+        self._lock = threading.Lock()
+
+    def cancel(self) -> None:
+        self._event.set()
+        with self._lock:
+            if self._proc is not None:
+                self._proc.terminate()
+
+    def is_cancelled(self) -> bool:
+        return self._event.is_set()
+
+    def check(self) -> None:
+        if self.is_cancelled():
+            raise Cancelled
+
+    def _register(self, proc: Popen) -> None:
+        with self._lock:
+            self._proc = proc
+            if self.is_cancelled():
+                proc.terminate()
+
+    def _unregister(self) -> None:
+        with self._lock:
+            self._proc = None
+
+
+# Only one pipeline runs at a time (enforced by the webapp's run lock), so a
+# single module-level slot for "the token of whichever run is active" is
+# enough — no need to thread a token argument through every function.
+_cancel_token: CancelToken | None = None
+
+
+def set_cancel_token(token: CancelToken | None) -> None:
+    global _cancel_token  # noqa: PLW0603
+    _cancel_token = token
+
+
+def _check_cancelled() -> None:
+    if _cancel_token is not None:
+        _cancel_token.check()
+
+
+def run_checked(
+    cmd: list, *, check: bool = True, capture_output: bool = False, text: bool = False
+) -> CompletedProcess:
+    """`subprocess.run`, but registers the child process with the active
+    `CancelToken` (if any) so a cancel request can kill it immediately."""
+    token = _cancel_token
+    if token is not None:
+        token.check()
+
+    proc = Popen(
+        cmd,
+        stdout=subprocess.PIPE if capture_output else None,
+        stderr=subprocess.PIPE if capture_output else None,
+        text=text if capture_output else None,
+    )
+    if token is not None:
+        token._register(proc)  # noqa: SLF001
+
+    try:
+        stdout, stderr = proc.communicate()
+    finally:
+        if token is not None:
+            token._unregister()  # noqa: SLF001
+
+    if token is not None and token.is_cancelled():
+        raise Cancelled
+
+    if check and proc.returncode != 0:
+        raise CalledProcessError(proc.returncode, cmd, output=stdout, stderr=stderr)
+
+    return CompletedProcess(cmd, proc.returncode, stdout, stderr)
 
 ROOT_DIR = Path(__file__).parent.parent.parent
 FFMPEG_LOG_LEVEL = Literal[
@@ -100,7 +195,7 @@ def ffmpeg_fix_codecs(
     if dry_run:
         return output_file
 
-    run(ffmpeg_cmd, check=True)
+    run_checked(ffmpeg_cmd)
 
     return output_file
 
@@ -133,7 +228,7 @@ def ffmpeg_audio_normalization(
         f"[code]{join(ffmpeg_audio_normalization)}[/code]\n\n",
     )
 
-    ffmpeg_normalization_output = run(
+    ffmpeg_normalization_output = run_checked(
         ffmpeg_audio_normalization,
         capture_output=True,
         text=True,
@@ -189,7 +284,7 @@ def ffmpeg_audio_normalization(
         if dry_run:
             return output_file
 
-        run(ffmpeg_audio_normalization, check=True)
+        run_checked(ffmpeg_audio_normalization)
 
         return output_file
     return output_file
@@ -224,7 +319,7 @@ def auto_editor_cut_silences(
     if dry_run:
         return output_file
 
-    run(auto_editor_silence_cut, check=True)
+    run_checked(auto_editor_silence_cut)
     rprint(join(auto_editor_silence_cut), "\n\n")
 
     return output_file
@@ -246,7 +341,7 @@ def silero_get_speech_pauses(
         return [], output_file
 
     rprint(join(ffmpeg_input_to_wav), "\n\n")
-    run(ffmpeg_input_to_wav, check=True)
+    run_checked(ffmpeg_input_to_wav)
 
     silero_model = load_silero_vad()
     audio_data = read_audio(str(output_file))
@@ -398,6 +493,7 @@ def run_single_file(
     fix_codecs: bool = True,
     transcribe_audio: bool = True,
     enhance_before_transcribe: bool = False,
+    enhance_video_audio: bool = False,
     force: bool = False,
 ) -> list[Path]:
     files_processed = []
@@ -416,29 +512,54 @@ def run_single_file(
     current_input_path = in_path
     current_output_path = output_dir / source_filename
 
-    def already_done(path: Path) -> bool:
+    def already_done(path: Path, input_file: Path | None = None) -> bool:
         if force or dry_run or not path.exists():
             return False
+
+        # Se a entrada desta etapa for mais nova que a saída, a saída está
+        # defasada (ex: rodou antes de habilitar o enhance_video_audio, então
+        # 01_ENHANCED.mkv nasceu depois dos cortes). Nesse caso, refaz.
+        if input_file is not None and input_file.exists():
+            if input_file.stat().st_mtime > path.stat().st_mtime:
+                rprint(
+                    f"⏭️  {path.name} desatualizado (entrada mais nova), refazendo...\n\n"
+                )
+                return False
+
         rprint(f"⏭️  Etapa já feita, reaproveitando: {path.name}\n\n")
         return True
 
+    def audio_is_valid(path: Path) -> bool:
+        try:
+            import soundfile as sf
+
+            info = sf.info(str(path))
+            if info.frames > (1 << 40):
+                return False
+            with sf.SoundFile(str(path)) as f:
+                f.read(4096)
+            return True
+        except Exception:
+            return False
+
     if fix_codecs:
+        _check_cancelled()
         current_output_path = current_output_path.with_stem("00_FIX_CODECS")
 
-        if not already_done(current_output_path):
+        if not already_done(current_output_path, input_file=current_input_path):
             ffmpeg_fix_codecs(
                 input_file=current_input_path,
                 output_file=current_output_path,
                 dry_run=dry_run,
             )
-
         files_processed.append(current_output_path)
         current_input_path = current_output_path
 
     if normalize_audio:
+        _check_cancelled()
         current_output_path = current_output_path.with_stem("01_NORMALIZED")
 
-        if not already_done(current_output_path):
+        if not already_done(current_output_path, input_file=current_input_path):
             ffmpeg_audio_normalization(
                 input_file=current_input_path,
                 output_file=current_output_path,
@@ -448,10 +569,83 @@ def run_single_file(
         files_processed.append(current_output_path)
         current_input_path = current_output_path
 
+    if enhance_video_audio:
+        # Substitui a trilha de áudio do vídeo pelo áudio melhorado (Speech
+        # API /enhance). Precisa rodar ANTES dos cortes: auto-editor e Silero
+        # analisam o áudio pra decidir onde cortar, então pra "os cortes
+        # seguirem o áudio enhance" o enhance tem que estar embutido no vídeo
+        # já nesse ponto — e o vídeo final sai com o áudio melhorado embutido.
+        _check_cancelled()
+        current_output_path = current_output_path.with_stem("01_ENHANCED")
+
+        if not already_done(current_output_path, input_file=current_input_path):
+            raw_audio_path = current_output_path.with_name("01A_FOR_ENHANCE.flac")
+            enhanced_audio_path = current_output_path.with_name("01B_ENHANCED.flac")
+
+            if already_done(raw_audio_path, input_file=current_input_path) and not audio_is_valid(raw_audio_path):
+                rprint(
+                    f"⚠️  {raw_audio_path.name} corrompido/inválido, reextraindo...\n\n"
+                )
+                raw_audio_path.unlink(missing_ok=True)
+
+            if not already_done(raw_audio_path):
+                # Mono/48kHz em vez de 24kHz (como o ramo de transcrição): aqui
+                # o resultado vira a trilha de áudio final do vídeo, então
+                # vale o upload maior pra preservar o máximo de banda.
+                ffmpeg_extract_audio_cmd = [
+                    *get_ffmpeg_cmd(),
+                    "-i", current_input_path,
+                    "-ac", "1", "-ar", "48000", "-c:a", "flac",
+                    raw_audio_path,
+                    "-y",
+                ]
+                rprint(
+                    "🎧 ffmpeg extract audio for video enhance:",
+                    f"[code]{join(ffmpeg_extract_audio_cmd)}[/code]",
+                    "\n\n",
+                )
+
+                if not dry_run:
+                    run_checked(ffmpeg_extract_audio_cmd)
+            files_processed.append(raw_audio_path)
+
+            # Sempre re-executa o enhance (igual ao ramo de transcrição): é a
+            # etapa mais sujeita a precisar de retry (URL do Colab mudou etc.).
+            enhanced_audio_path = enhance_via_api(
+                raw_audio_path,
+                enhanced_audio_path,
+                dry_run=dry_run,
+            )
+            files_processed.append(enhanced_audio_path)
+
+            if not dry_run:
+                ffmpeg_mux_cmd = [
+                    *get_ffmpeg_cmd(),
+                    "-i", current_input_path,
+                    "-i", enhanced_audio_path,
+                    "-map", "0:v:0",
+                    "-map", "1:a:0",
+                    "-c:v", "copy",
+                    "-c:a", "aac", "-b:a", "512k",
+                    "-shortest",
+                    current_output_path,
+                    "-y",
+                ]
+                rprint(
+                    "🎞️ ffmpeg mux enhanced audio into video:",
+                    f"[code]{join(ffmpeg_mux_cmd)}[/code]",
+                    "\n\n",
+                )
+                run_checked(ffmpeg_mux_cmd)
+
+        files_processed.append(current_output_path)
+        current_input_path = current_output_path
+
     if cut_audio_silences:
+        _check_cancelled()
         current_output_path = current_output_path.with_stem("02_AE_CUT")
 
-        if not already_done(current_output_path):
+        if not already_done(current_output_path, input_file=current_input_path):
             auto_editor_cut_silences(
                 input_file=current_input_path,
                 output_file=current_output_path,
@@ -462,9 +656,10 @@ def run_single_file(
         current_input_path = current_output_path
 
     if cut_speech_silences:
+        _check_cancelled()
         current_output_path = current_output_path.with_stem("04_FINAL")
 
-        if not already_done(current_output_path):
+        if not already_done(current_output_path, input_file=current_input_path):
             speech_timestamps, _ = silero_get_speech_pauses(
                 input_file=current_input_path,
                 output_file=current_input_path.with_name("03_SILERO.wav"),
@@ -481,9 +676,13 @@ def run_single_file(
         current_input_path = current_output_path
 
     if transcribe_audio:
+        _check_cancelled()
         audio_for_transcription = current_input_path
 
-        if enhance_before_transcribe:
+        # Se o vídeo já foi gravado com o áudio enhanced embutido
+        # (enhance_video_audio), não faz sentido mandar de novo pelo /enhance
+        # só pra transcrever — o áudio já está melhorado.
+        if enhance_before_transcribe and not enhance_video_audio:
             # /enhance only accepts audio files (soundfile can't read video
             # containers), so extract the audio track first. Mono/24kHz/FLAC
             # instead of the source's raw stereo/48kHz WAV: the server
@@ -493,7 +692,13 @@ def run_single_file(
             # a lot over a free ngrok tunnel with a full-length video.
             raw_audio_path = current_output_path.with_name("03A_FOR_ENHANCE.flac")
 
-            if not already_done(raw_audio_path):
+            if already_done(raw_audio_path, input_file=current_input_path) and not audio_is_valid(raw_audio_path):
+                rprint(
+                    f"⚠️  {raw_audio_path.name} corrompido/inválido, reextraindo...\n\n"
+                )
+                raw_audio_path.unlink(missing_ok=True)
+
+            if not already_done(raw_audio_path, input_file=current_input_path):
                 ffmpeg_extract_audio_cmd = [
                     *get_ffmpeg_cmd(),
                     "-i", current_input_path,
@@ -508,13 +713,14 @@ def run_single_file(
                 )
 
                 if not dry_run:
-                    run(ffmpeg_extract_audio_cmd, check=True)
+                    run_checked(ffmpeg_extract_audio_cmd)
             files_processed.append(raw_audio_path)
 
             # Always re-run enhance/transcribe themselves — these are the
             # steps most likely to need a retry (e.g. the Colab API URL
             # changed), and their inputs are cheap to re-derive once the
             # expensive video-cutting steps above have been reused.
+            _check_cancelled()
             enhanced_path = current_output_path.with_name("03B_ENHANCED.flac")
             audio_for_transcription = enhance_via_api(
                 raw_audio_path,
@@ -523,6 +729,7 @@ def run_single_file(
             )
             files_processed.append(audio_for_transcription)
 
+        _check_cancelled()
         transcribe_to_srt(
             audio_for_transcription,
             ORIGINAL_SRT_FILE_PATH,
@@ -543,6 +750,7 @@ def run_many_files(
     fix_codecs: bool = True,
     transcribe_audio: bool = True,
     enhance_before_transcribe: bool = False,
+    enhance_video_audio: bool = False,
     force: bool = False,
 ) -> None:
     in_path = input_path.resolve()
@@ -573,6 +781,7 @@ def run_many_files(
             cut_speech_silences=cut_speech_silences,
             transcribe_audio=transcribe_audio,
             enhance_before_transcribe=enhance_before_transcribe,
+            enhance_video_audio=enhance_video_audio,
             force=force,
             dry_run=dry_run,
         )

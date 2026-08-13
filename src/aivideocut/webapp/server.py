@@ -26,7 +26,7 @@ from aivideocut.gem_srt_english import gem_translate_srt_to_en  # noqa: E402
 from aivideocut.gem_summary import generate_summary  # noqa: E402
 from aivideocut.gem_yt_chapters import gem_yt_chapters  # noqa: E402
 from aivideocut.gem_yt_seo import gem_yt_seo  # noqa: E402
-from aivideocut.sil2 import run_single_file  # noqa: E402
+from aivideocut.sil2 import CancelToken, Cancelled, run_single_file, set_cancel_token  # noqa: E402
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent.parent
 ENV_PATH = ROOT_DIR / ".env"
@@ -74,11 +74,15 @@ class Run:
         self.id = run_id
         self.log_text = ""
         self._log_lock = threading.Lock()
-        self.status: Literal["running", "done", "error"] = "running"
+        self.status: Literal["running", "done", "error", "cancelled"] = "running"
         self.error: str | None = None
         self.result: Any = None
         self.done_event = threading.Event()
+        self.cancel_token = CancelToken()
         self._target = target
+
+    def cancel(self) -> None:
+        self.cancel_token.cancel()
 
     def _append_log(self, text: str) -> None:
         with self._log_lock:
@@ -119,13 +123,17 @@ class Run:
         pump_thread = threading.Thread(target=self._pump_fd, args=(read_fd,), daemon=True)
         pump_thread.start()
 
+        set_cancel_token(self.cancel_token)
         try:
             self.result = self._target()
             self.status = "done"
+        except Cancelled:
+            self.status = "cancelled"
         except Exception as exc:  # noqa: BLE001
             self.status = "error"
             self.error = str(exc)
         finally:
+            set_cancel_token(None)
             sys.stdout.flush()
             sys.stderr.flush()
             os.dup2(saved_stdout_fd, 1)
@@ -313,6 +321,7 @@ class PipelineRequest(BaseModel):
     cut_speech_silences: bool = True
     transcribe_audio: bool = True
     enhance_before_transcribe: bool = False
+    enhance_video_audio: bool = False
     force: bool = False
 
 
@@ -321,6 +330,17 @@ def start_pipeline(req: PipelineRequest) -> dict[str, str]:
     input_path = Path(req.input_path).expanduser()
     if not input_path.is_file():
         raise HTTPException(status_code=400, detail="Arquivo de vídeo não encontrado")
+
+    if req.enhance_before_transcribe and req.enhance_video_audio:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "As opções de enhance são mutuamente exclusivas: "
+                "'Melhorar áudio antes de transcrever' e "
+                "'Substituir áudio do vídeo pelo enhanced' não podem "
+                "ser marcadas ao mesmo tempo."
+            ),
+        )
 
     def _target() -> list[str]:
         result = run_single_file(
@@ -331,6 +351,7 @@ def start_pipeline(req: PipelineRequest) -> dict[str, str]:
             cut_speech_silences=req.cut_speech_silences,
             transcribe_audio=req.transcribe_audio,
             enhance_before_transcribe=req.enhance_before_transcribe,
+            enhance_video_audio=req.enhance_video_audio,
             force=req.force,
         )
         return [str(p) for p in result]
@@ -404,6 +425,22 @@ def get_current_run() -> dict[str, Any]:
 
     run = _runs[_current_run_id]
     return {"run_id": run.id, "status": run.status, "error": run.error}
+
+
+@app.post("/api/runs/{run_id}/cancel")
+def cancel_run(run_id: str) -> dict[str, bool]:
+    run = _runs.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Execução não encontrada")
+
+    if run.status != "running":
+        raise HTTPException(status_code=409, detail="Essa execução já terminou")
+
+    # Kills the active ffmpeg/auto-editor subprocess right away; if we're
+    # currently blocked on a network call instead (Speech API), it takes
+    # effect at the next step boundary once that call returns.
+    run.cancel()
+    return {"ok": True}
 
 
 # ==========================

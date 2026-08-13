@@ -298,6 +298,10 @@
   .status-pill.running { background: var(--warning-bg); color: var(--warning); }
   .status-pill.done { background: var(--success-bg); color: var(--success); }
   .status-pill.error { background: var(--danger-bg); color: var(--danger); }
+  .status-pill.cancelled { background: var(--pill-bg); color: var(--text-secondary); }
+
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-danger:hover { filter: brightness(1.08); }
 
   .status-pill .dot {
     width: 6px;
@@ -522,6 +526,13 @@
       </div>
       <div class="switch-row">
         <div>
+          <div class="switch-label">Substituir áudio do vídeo pelo enhanced</div>
+          <div class="switch-desc">Envia o áudio pela API do Colab (/enhance) e embute o resultado como trilha de áudio do vídeo final — os cortes passam a seguir o áudio melhorado. Implica áudio enhanced também na transcrição.</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="opt-enhance_video_audio" /><span class="track"></span></label>
+      </div>
+      <div class="switch-row">
+        <div>
           <div class="switch-label">Reaproveitar etapas já feitas</div>
           <div class="switch-desc">Se um arquivo de uma etapa já existe (de uma tentativa anterior), pula e reusa em vez de refazer. Desligue pra forçar tudo de novo do zero.</div>
         </div>
@@ -534,8 +545,9 @@
         <h2 style="margin:0;">Execução</h2>
         <span class="status-pill idle" id="pipeline-status"><span class="dot"></span>Ocioso</span>
       </div>
-      <div class="save-row" style="justify-content:flex-start; margin-top:16px;">
+      <div class="save-row" style="justify-content:flex-start; margin-top:16px; gap:10px;">
         <button class="btn btn-primary" id="start-pipeline-btn">Iniciar pipeline</button>
+        <button class="btn btn-danger" id="cancel-pipeline-btn" style="display:none;">Cancelar</button>
       </div>
       <div class="log-panel" id="pipeline-log"></div>
       <div id="pipeline-results"></div>
@@ -778,20 +790,56 @@ async function runAndStream(startPath, startBody, logEl, statusEl, onDone) {
     streamRun(run_id, logEl, (result) => {
       if (result.status === "done") {
         setStatus(statusEl, "done", "Concluído");
+      } else if (result.status === "cancelled") {
+        setStatus(statusEl, "cancelled", "Cancelado");
       } else {
         setStatus(statusEl, "error", "Erro");
         toast(result.error || "Falhou", true);
       }
       if (onDone) onDone(result);
     });
+    return run_id;
   } catch (err) {
     setStatus(statusEl, "error", "Erro");
     toast(err.message, true);
+    return null;
   }
 }
 
 // ---------- Pipeline ----------
-document.getElementById("start-pipeline-btn").addEventListener("click", () => {
+let currentPipelineRunId = null;
+
+function setPipelineRunning(running) {
+  document.getElementById("start-pipeline-btn").style.display = running ? "none" : "";
+  document.getElementById("cancel-pipeline-btn").style.display = running ? "" : "none";
+}
+
+document.getElementById("cancel-pipeline-btn").addEventListener("click", async () => {  if (!currentPipelineRunId) return;
+  try {
+    await api(`/api/runs/${currentPipelineRunId}/cancel`, { method: "POST" });
+    toast("Cancelando…");
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+// ---------- Enhance: opções mutuamente exclusivas ----------
+// "Substituir áudio do vídeo pelo enhanced" já garante áudio enhanced na
+// transcrição, então marcar um desmarca o outro.
+(function setupEnhanceMutualExclusion() {
+  const before = document.getElementById("opt-enhance_before_transcribe");
+  const video = document.getElementById("opt-enhance_video_audio");
+  if (!before || !video) return;
+
+  before.addEventListener("change", () => {
+    if (before.checked) video.checked = false;
+  });
+  video.addEventListener("change", () => {
+    if (video.checked) before.checked = false;
+  });
+})();
+
+document.getElementById("start-pipeline-btn").addEventListener("click", async () => {
   const inputPath = document.getElementById("video-path").value.trim();
   if (!inputPath) {
     toast("Escolha um vídeo primeiro", true);
@@ -806,18 +854,23 @@ document.getElementById("start-pipeline-btn").addEventListener("click", () => {
     cut_speech_silences: document.getElementById("opt-cut_speech_silences").checked,
     transcribe_audio: document.getElementById("opt-transcribe_audio").checked,
     enhance_before_transcribe: document.getElementById("opt-enhance_before_transcribe").checked,
+    enhance_video_audio: document.getElementById("opt-enhance_video_audio").checked,
     force: !document.getElementById("opt-resume").checked,
   };
 
   const resultsEl = document.getElementById("pipeline-results");
   resultsEl.innerHTML = "";
+  setPipelineRunning(true);
 
-  runAndStream(
+  currentPipelineRunId = await runAndStream(
     "/api/pipeline/start",
     body,
     document.getElementById("pipeline-log"),
     document.getElementById("pipeline-status"),
     (result) => {
+      setPipelineRunning(false);
+      currentPipelineRunId = null;
+
       if (result.status === "done" && Array.isArray(result.result)) {
         resultsEl.innerHTML =
           '<div class="field" style="margin-top:16px;"><label>Arquivos gerados</label></div>' +
@@ -976,10 +1029,17 @@ async function reconnectToActiveRun() {
     );
 
     const statusEl = document.getElementById("pipeline-status");
-    if (current.status === "running") setStatus(statusEl, "running", "Rodando…");
+    if (current.status === "running") {
+      setStatus(statusEl, "running", "Rodando…");
+      currentPipelineRunId = current.run_id;
+      setPipelineRunning(true);
+    }
 
     streamRun(current.run_id, document.getElementById("pipeline-log"), (result) => {
+      setPipelineRunning(false);
+      currentPipelineRunId = null;
       if (result.status === "done") setStatus(statusEl, "done", "Concluído");
+      else if (result.status === "cancelled") setStatus(statusEl, "cancelled", "Cancelado");
       else setStatus(statusEl, "error", "Erro");
       loadFiles();
     });

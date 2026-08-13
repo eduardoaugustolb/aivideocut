@@ -34,6 +34,7 @@ sil2.py (local, CPU)
   └─ Silero VAD + smartcut: corte fino de fala
       │
       ├─(opcional)─▶ Speech API /enhance ─▶ áudio tratado (só pra melhorar a transcrição)
+      ├─(opcional)─▶ Speech API /enhance ─▶ áudio tratado embutido como trilha do vídeo (cortes seguem o áudio melhorado)
       │
       ▼
 Speech API /transcribe (Colab, GPU) ─▶ transcriptions/original_transcription.srt
@@ -55,7 +56,7 @@ função por função em Python.
 
 | Serviço | O que faz | Custo |
 |---|---|---|
-| **Speech API** (`SpeechAPI.ipynb` no Google Colab) | Transcrição (`faster-whisper`) e speech enhancement (`resemble-enhance`), rodando na GPU grátis do Colab | Grátis (free tier do Colab) |
+| **Speech API** (`SpeechAPI.ipynb` no Google Colab) | Transcrição (`faster-whisper`) e speech enhancement (`DeepFilterNet3`), rodando na GPU grátis do Colab | Grátis (free tier do Colab) |
 | **NVIDIA build.nvidia.com** | Geração de texto (resumo, SEO, etc.) — modelo `nemotron-3.5-lightning`, principal | Grátis (free tier) |
 | **Google Gemini API** | Fallback da geração de texto, só usado se a NVIDIA falhar 4x seguidas | Grátis (free tier do AI Studio) |
 
@@ -129,6 +130,7 @@ run_single_file(
     cut_speech_silences=True,
     transcribe_audio=True,
     enhance_before_transcribe=False,  # True = manda o áudio pelo /enhance antes de transcrever
+    enhance_video_audio=False,  # True = embute o áudio enhanced como trilha do vídeo (cortes seguem o áudio melhorado)
     force=False,  # False = reaproveita etapas já feitas (resume)
 )
 ```
@@ -170,7 +172,7 @@ src/aivideocut/
     server.py           FastAPI: endpoints da pipeline, geração de conteúdo, config, arquivos
     static/index.html   a interface (HTML/CSS/JS autocontido, sem build step)
 
-SpeechAPI.ipynb        notebook do Colab: /transcribe (faster-whisper) e /enhance (resemble-enhance)
+SpeechAPI.ipynb        notebook do Colab: /transcribe (faster-whisper) e /enhance (DeepFilterNet3)
 ```
 
 ## Reportando problemas
